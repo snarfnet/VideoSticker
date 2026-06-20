@@ -6,17 +6,20 @@ struct ContentView: View {
     @State private var showCamera = false
     @State private var showLibrary = false
     @State private var processing = false
-    @State private var showReview = false
+    @State private var progressText = "作成中…"
     @State private var showShare = false
     @State private var shareURL: URL?
 
-    // レビュー用の作業状態
-    @State private var rawFrames: [UIImage] = []
-    @State private var baseFrames: [UIImage] = []
-    @State private var detectedGesture: Gesture = .nod
-    @State private var reviewSlotID = 1
+    // 撮影前の背景設定（全スタンプ共通）
     @State private var removeBG = true
-    @State private var result: StickerBuilder.Result?
+
+    // バケツ別の作業フレーム（背景切替・微調整の再生成に使う）
+    @State private var rawByGesture: [Gesture: [UIImage]] = [:]
+    @State private var baseByGesture: [Gesture: [UIImage]] = [:]
+
+    // 個別プレビュー
+    @State private var showReview = false
+    @State private var reviewSlotID = 1
 
     private let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
@@ -29,9 +32,12 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 header
                 ScrollView {
+                    guideCard
+                    bgPicker
                     LazyVGrid(columns: cols, spacing: 10) {
                         ForEach(store.slots) { slot in
                             SlotCell(slot: slot)
+                                .onTapGesture { openReview(slot) }
                         }
                     }
                     .padding(16)
@@ -42,18 +48,18 @@ struct ContentView: View {
             VStack { Spacer(); bottomBar }
         }
         .sheet(isPresented: $showCamera) {
-            VideoPicker(source: .camera) { url in process(url) }
+            VideoPicker(source: .camera) { url in processAll(url) }
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $showLibrary) {
-            VideoPicker(source: .library) { url in process(url) }
+            VideoPicker(source: .library) { url in processAll(url) }
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $showReview) { reviewSheet }
         .sheet(isPresented: $showShare) {
             if let url = shareURL { ShareSheet(items: [url]) }
         }
-        .overlay { if processing { ProcessingOverlay() } }
+        .overlay { if processing { ProcessingOverlay(text: progressText) } }
     }
 
     // MARK: - ヘッダー
@@ -70,6 +76,42 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.bottom, 10)
+    }
+
+    // MARK: - 案内カード
+
+    private var guideCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("1本の動画から24個のスタンプを自動で作ります")
+                .font(.system(size: 14, weight: .heavy, design: .rounded))
+                .foregroundStyle(Color(red: 0.12, green: 0.3, blue: 0.7))
+            Text("お辞儀 → 手を振る → OKサイン → ガッツポーズ → 手のひら → 会釈、と順番に動いてください。各ポーズは1〜2秒キープすると、動きを見分けて枠に振り分けます。")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.7)))
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
+
+    // MARK: - 背景の選択（撮影前）
+
+    private var bgPicker: some View {
+        HStack(spacing: 10) {
+            Text("背景")
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundStyle(.secondary)
+            Picker("背景", selection: $removeBG) {
+                Text("透過する").tag(true)
+                Text("透過しない").tag(false)
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
     }
 
     // MARK: - 下部バー
@@ -108,72 +150,99 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    // MARK: - 処理
+    // MARK: - 1動画 → 24枠 自動振り分け
 
-    private func process(_ url: URL) {
+    private func processAll(_ url: URL) {
         processing = true
+        progressText = "フレームを解析中…"
+        let remove = removeBG
         Task {
-            let frames = await VideoFrameExtractor.extract(from: url, count: 6)
+            // 多めに抽出して、各フレームの動きを個別に判定。
+            let frames = await VideoFrameExtractor.extract(from: url, count: 30)
             guard !frames.isEmpty else {
                 await MainActor.run { processing = false }
                 return
             }
-            let gesture = GestureClassifier.classify(frames)
-            let base = StickerBuilder.prepare(rawFrames: frames, removeBG: true)
-            let (slotID, cap) = await MainActor.run { () -> (Int, Caption) in
-                let id = store.targetSlot(for: gesture)
-                return (id, store.slots.first { $0.id == id }!.caption)
+            let gestures = GestureClassifier.classifyEach(frames)
+            var byG: [Gesture: [UIImage]] = [:]
+            for (img, g) in zip(frames, gestures) {
+                if let g { byG[g, default: []].append(img) }
             }
-            let built = StickerBuilder.compose(baseFrames: base, caption: cap)
+
+            var newRaw: [Gesture: [UIImage]] = [:]
+            var newBase: [Gesture: [UIImage]] = [:]
+            var built: [(Int, StickerBuilder.Result)] = []
+
+            for gesture in Gesture.allCases {
+                guard let pool = byG[gesture], !pool.isEmpty else { continue }
+                let picked = sample(pool, 8)
+                let base = StickerBuilder.prepare(rawFrames: picked, removeBG: remove)
+                guard !base.isEmpty else { continue }
+                newRaw[gesture] = picked
+                newBase[gesture] = base
+                for cap in CaptionBook.captions(for: gesture) {
+                    if let r = StickerBuilder.compose(baseFrames: base, caption: cap) {
+                        built.append((cap.id, r))
+                    }
+                }
+            }
+
             await MainActor.run {
-                rawFrames = frames
-                baseFrames = base
-                detectedGesture = gesture
-                reviewSlotID = slotID
-                removeBG = true
-                result = built
+                rawByGesture.merge(newRaw) { _, n in n }
+                baseByGesture.merge(newBase) { _, n in n }
+                for (id, r) in built {
+                    store.save(slotID: id, apng: r.apng, preview: r.preview, bytes: r.bytes)
+                }
                 processing = false
-                showReview = true
             }
         }
     }
 
-    private func recompose(captionID: Int) {
-        guard let cap = store.slots.first(where: { $0.id == captionID })?.caption else { return }
+    /// 配列から最大 k 枚を等間隔で抜く。
+    private func sample(_ a: [UIImage], _ k: Int) -> [UIImage] {
+        guard a.count > k else { return a }
+        if k <= 1 { return [a[a.count / 2]] }
+        return (0..<k).map { a[$0 * (a.count - 1) / (k - 1)] }
+    }
+
+    // MARK: - 個別プレビュー / 微調整
+
+    private func openReview(_ slot: StickerStore.Slot) {
+        reviewSlotID = slot.id
+        showReview = true
+    }
+
+    private var reviewGesture: Gesture {
+        store.slots.first { $0.id == reviewSlotID }?.caption.gesture ?? .nod
+    }
+
+    /// 背景設定を変えてこのバケツを作り直し、所属する全枠を更新。
+    private func rebuildBucket(remove: Bool) {
+        let g = reviewGesture
+        guard let raw = rawByGesture[g] else { return }
         processing = true
+        progressText = "作り直し中…"
         Task {
-            let built = StickerBuilder.compose(baseFrames: baseFrames, caption: cap)
+            let base = StickerBuilder.prepare(rawFrames: raw, removeBG: remove)
+            var built: [(Int, StickerBuilder.Result)] = []
+            for cap in CaptionBook.captions(for: g) {
+                if let r = StickerBuilder.compose(baseFrames: base, caption: cap) {
+                    built.append((cap.id, r))
+                }
+            }
             await MainActor.run {
-                reviewSlotID = captionID
-                result = built
+                baseByGesture[g] = base
+                for (id, r) in built {
+                    store.save(slotID: id, apng: r.apng, preview: r.preview, bytes: r.bytes)
+                }
                 processing = false
             }
         }
-    }
-
-    private func rebuildBG(_ remove: Bool) {
-        processing = true
-        Task {
-            let base = StickerBuilder.prepare(rawFrames: rawFrames, removeBG: remove)
-            let cap = await MainActor.run { store.slots.first { $0.id == reviewSlotID }!.caption }
-            let built = StickerBuilder.compose(baseFrames: base, caption: cap)
-            await MainActor.run {
-                baseFrames = base
-                removeBG = remove
-                result = built
-                processing = false
-            }
-        }
-    }
-
-    private func saveReview() {
-        guard let r = result else { return }
-        store.save(slotID: reviewSlotID, apng: r.apng, preview: r.preview, bytes: r.bytes)
-        showReview = false
     }
 
     private func exportAll() {
         processing = true
+        progressText = "書き出し中…"
         let snapshot = store.slots
         Task {
             let url = Exporter.makeZip(slots: snapshot)
@@ -187,16 +256,18 @@ struct ContentView: View {
     // MARK: - レビューシート
 
     private var reviewSheet: some View {
-        let bucket = detectedGesture
-        let captions = CaptionBook.captions(for: bucket)
+        let slot = store.slots.first { $0.id == reviewSlotID }
+        let g = reviewGesture
+        let detected = baseByGesture[g] != nil
         return VStack(spacing: 16) {
             HStack {
-                Button("取り直す") { showReview = false }
+                Button("閉じる") { showReview = false }
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Text("判定: \(bucket.label)")
-                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                Text("\(g.label)・\(slot?.caption.text.replacingOccurrences(of: "\n", with: " ") ?? "")")
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .padding(.horizontal, 4)
 
@@ -204,55 +275,45 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color(white: 0.95))
                     .overlay(checker.clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)))
-                if let r = result {
-                    AnimatedFrames(frames: r.preview).padding(20)
+                if let frames = slot?.preview, !frames.isEmpty {
+                    AnimatedFrames(frames: frames).padding(20)
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "video.slash")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.secondary)
+                        Text(detected ? "このスタンプは未作成です"
+                                       : "この動きは検出されませんでした。\nもう一度その動きを入れて撮り直してください。")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
             .frame(height: 300)
 
-            if let r = result {
-                Text("\(r.bytes / 1024) KB")
+            if let bytes = slot?.bytes, bytes > 0 {
+                Text("\(bytes / 1024) KB")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(r.bytes <= StickerBuilder.sizeLimit ? Color.secondary : Color.red)
+                    .foregroundStyle(bytes <= StickerBuilder.sizeLimit ? Color.secondary : Color.red)
             }
 
-            // バケツ内の文言をスワイプ選択
-            VStack(alignment: .leading, spacing: 6) {
-                Text("文言（スワイプで変更）")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(captions) { c in
-                            let on = c.id == reviewSlotID
-                            Button { recompose(captionID: c.id) } label: {
-                                Text(c.text.replacingOccurrences(of: "\n", with: " "))
-                                    .font(.system(size: 14, weight: .heavy, design: .rounded))
-                                    .foregroundStyle(on ? .white : Color(c.color))
-                                    .padding(.horizontal, 14).padding(.vertical, 10)
-                                    .background(on ? Color(c.color) : Color(c.color).opacity(0.12))
-                                    .clipShape(Capsule())
-                            }
-                        }
+            if detected {
+                Toggle(isOn: Binding(get: { removeBG }, set: { removeBG = $0; rebuildBucket(remove: $0) })) {
+                    Text("背景を透過する").font(.system(size: 15, weight: .semibold))
+                }
+                .tint(Color(red: 0.2, green: 0.5, blue: 1.0))
+
+                if slot?.filled == true {
+                    Button(role: .destructive) {
+                        store.clear(slotID: reviewSlotID)
+                    } label: {
+                        Text("この枠を消す")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 12)
                     }
                 }
             }
-
-            Toggle(isOn: Binding(get: { removeBG }, set: { rebuildBG($0) })) {
-                Text("背景を消す").font(.system(size: 15, weight: .semibold))
-            }
-            .tint(Color(red: 0.2, green: 0.5, blue: 1.0))
-
-            Button { saveReview() } label: {
-                Text("このスタンプに決定")
-                    .font(.system(size: 17, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .background(LinearGradient(colors: [Color(red: 0.2, green: 0.5, blue: 1.0),
-                                                        Color(red: 0.1, green: 0.35, blue: 0.95)],
-                                               startPoint: .top, endPoint: .bottom))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .disabled(result == nil)
             Spacer(minLength: 0)
         }
         .padding(20)
@@ -319,12 +380,13 @@ private struct SlotCell: View {
 }
 
 private struct ProcessingOverlay: View {
+    var text: String = "作成中…"
     var body: some View {
         ZStack {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 12) {
                 ProgressView().scaleEffect(1.4).tint(.white)
-                Text("作成中…")
+                Text(text)
                     .font(.system(size: 14, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
             }

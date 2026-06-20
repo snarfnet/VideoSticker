@@ -16,7 +16,7 @@ struct VideoPicker: UIViewControllerRepresentable {
         p.mediaTypes = [UTType.movie.identifier]
         if source == .camera {
             p.cameraCaptureMode = .video
-            p.videoMaximumDuration = 4   // LINEは最長4秒
+            p.videoMaximumDuration = 15   // 6種類の動きを1本に収めるため長めに
             p.videoQuality = .typeHigh
         }
         p.delegate = context.coordinator

@@ -5,15 +5,13 @@ import UIKit
 /// 完全自動の一点当ては誤爆するので、ここでは粗いバケツ判定に徹する（UI側でスワイプ微調整）。
 enum GestureClassifier {
 
-    static func classify(_ frames: [UIImage]) -> Gesture {
-        // 動きが出きった後半フレームほど判定に向く。後半から順に試し、最初に確信を得たものを返す。
-        for img in frames.reversed() {
-            if let g = classifyOne(img) { return g }
-        }
-        return .nod
+    /// 各フレームを個別に判定する。動きが取れなかったフレームは nil。
+    /// 1本の動画から複数の動きを拾い、バケツ別に振り分けるために使う。
+    static func classifyEach(_ frames: [UIImage]) -> [Gesture?] {
+        frames.map { classifyOne($0) }
     }
 
-    private static func classifyOne(_ image: UIImage) -> Gesture? {
+    static func classifyOne(_ image: UIImage) -> Gesture? {
         guard let cg = image.cgImage else { return nil }
         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
 

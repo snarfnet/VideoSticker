@@ -19,13 +19,6 @@ final class StickerStore: ObservableObject {
 
     func index(of id: Int) -> Int? { slots.firstIndex { $0.id == id } }
 
-    /// バケツ内で最初の空きスロットID。無ければバケツ先頭ID。
-    func targetSlot(for gesture: Gesture) -> Int {
-        let inBucket = slots.filter { $0.caption.gesture == gesture }
-        if let empty = inBucket.first(where: { !$0.filled }) { return empty.id }
-        return inBucket.first?.id ?? slots[0].id
-    }
-
     func save(slotID: Int, apng: Data, preview: [UIImage], bytes: Int) {
         guard let i = index(of: slotID) else { return }
         slots[i].apng = apng
