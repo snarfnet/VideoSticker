@@ -1,0 +1,11 @@
+.DS_Store
+*.xcodeproj
+*.xcworkspace
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+xcuserdata/
+*.p8
+AuthKey_*.p8

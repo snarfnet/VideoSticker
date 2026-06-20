@@ -1,0 +1,73 @@
+name: Build and Upload to App Store
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Select Xcode
+      run: |
+        XCODE_APP=$(ls /Applications/ | grep "^Xcode_" | sort -V | tail -1)
+        sudo xcode-select -s "/Applications/$XCODE_APP"
+        xcodebuild -version
+
+    - name: Install XcodeGen
+      run: brew install xcodegen
+
+    - name: Set build number
+      run: |
+        BUILD_NUM=$(( ${{ github.run_number }} + 10 ))
+        echo "BUILD_NUM=$BUILD_NUM" >> $GITHUB_ENV
+        sed -i "" "s/CURRENT_PROJECT_VERSION: [0-9]*/CURRENT_PROJECT_VERSION: $BUILD_NUM/" project.yml
+
+    - name: Generate Xcode project
+      run: xcodegen generate
+
+    - name: Patch Info.plist build number
+      run: |
+        sed -i "" "s|<string>\$(CURRENT_PROJECT_VERSION)</string>|<string>$BUILD_NUM</string>|" VideoSticker/Info.plist
+        sed -i "" "/<key>CFBundleVersion<\/key>/{n;s|<string>[^<]*</string>|<string>$BUILD_NUM</string>|;}" VideoSticker/Info.plist
+
+    - name: Set up ASC API Key
+      env:
+        ASC_API_KEY_CONTENT: ${{ secrets.ASC_API_KEY_CONTENT }}
+      run: |
+        mkdir -p ~/.appstoreconnect/private_keys
+        echo "$ASC_API_KEY_CONTENT" | base64 -D > ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8
+        cp ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8 /tmp/asc_key.p8
+
+    - name: Build Archive
+      run: |
+        xcodebuild archive \
+          -scheme VideoSticker \
+          -configuration Release \
+          -destination "generic/platform=iOS" \
+          -archivePath build/VideoSticker.xcarchive \
+          CODE_SIGN_STYLE=Automatic \
+          DEVELOPMENT_TEAM=83VGKGSQUH \
+          -allowProvisioningUpdates \
+          -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8 \
+          -authenticationKeyID WDXGY9WX55 \
+          -authenticationKeyIssuerID 2be0734f-943a-4d61-9dc9-5d9045c46fec
+
+    - name: Export IPA
+      run: |
+        xcodebuild -exportArchive \
+          -archivePath build/VideoSticker.xcarchive \
+          -exportPath build/export \
+          -exportOptionsPlist export_options.plist \
+          -allowProvisioningUpdates \
+          -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8 \
+          -authenticationKeyID WDXGY9WX55 \
+          -authenticationKeyIssuerID 2be0734f-943a-4d61-9dc9-5d9045c46fec
+
+    - name: Install PyJWT
+      run: pip3 install --break-system-packages PyJWT requests
+
+    - name: Submit for Review
+      run: python3 scripts/submit.py ${{ env.BUILD_NUM }}
