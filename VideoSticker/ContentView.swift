@@ -213,7 +213,7 @@ struct ContentView: View {
             if let r = result {
                 Text("\(r.bytes / 1024) KB")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(r.bytes <= StickerBuilder.sizeLimit ? .secondary : .red)
+                    .foregroundStyle(r.bytes <= StickerBuilder.sizeLimit ? Color.secondary : Color.red)
             }
 
             // バケツ内の文言をスワイプ選択
