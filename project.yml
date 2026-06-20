@@ -31,3 +31,4 @@ targets:
         NSPhotoLibraryUsageDescription: "アルバムの動画から動くスタンプを作るために使います。"
         NSPhotoLibraryAddUsageDescription: "作った動くスタンプを写真に保存するために使います。"
         UIUserInterfaceStyle: Light
+        ITSAppUsesNonExemptEncryption: false
