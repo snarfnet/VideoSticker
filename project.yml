@@ -17,6 +17,9 @@ targets:
   VideoSticker:
     type: application
     platform: iOS
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1"
     sources:
       - VideoSticker
     info:
@@ -29,6 +32,11 @@ targets:
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSCameraUsageDescription: "お辞儀や挨拶の動きを撮影して、動くスタンプを作るためにカメラを使います。"
         NSMicrophoneUsageDescription: "動画撮影のためにマイクを使います（音声はスタンプには使いません）。"
         NSPhotoLibraryUsageDescription: "アルバムの動画から動くスタンプを作るために使います。"
