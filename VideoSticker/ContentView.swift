@@ -33,6 +33,7 @@ struct ContentView: View {
                 header
                 ScrollView {
                     guideCard
+                    sampleButton
                     bgPicker
                     LazyVGrid(columns: cols, spacing: 10) {
                         ForEach(store.slots) { slot in
@@ -95,6 +96,32 @@ struct ContentView: View {
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.7)))
         .padding(.horizontal, 16)
         .padding(.top, 4)
+    }
+
+    // MARK: - サンプル動画で試す（同梱動画でその場でスタンプ化）
+
+    private var sampleButton: some View {
+        Button { runSample() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                Text("サンプル動画で試す")
+            }
+            .font(.system(size: 14, weight: .heavy, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(LinearGradient(colors: [Color(red: 0.55, green: 0.4, blue: 0.95),
+                                                Color(red: 0.4, green: 0.3, blue: 0.85)],
+                                       startPoint: .top, endPoint: .bottom))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    private func runSample() {
+        guard let url = Bundle.main.url(forResource: "sample_salaryman", withExtension: "mp4") else { return }
+        processAll(url)
     }
 
     // MARK: - 背景の選択（撮影前）
