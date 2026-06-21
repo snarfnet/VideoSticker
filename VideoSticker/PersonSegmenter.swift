@@ -1,5 +1,6 @@
 import Vision
 import CoreImage
+import CoreVideo
 import UIKit
 
 /// Vision の人物セグメンテーションで背景を透過する。
@@ -24,28 +25,45 @@ enum PersonSegmenter {
         }
         guard let mask = request.results?.first?.pixelBuffer else { return image }
 
-        var maskCI = CIImage(cvPixelBuffer: mask)
-
-        // マスクがほぼ空（人物未検出）なら透明化せず元画像を返す。
-        // これがないと人物を拾えない動画でスタンプが真っ透明になる。
-        if let avg = CIFilter(name: "CIAreaAverage", parameters: [
-            kCIInputImageKey: maskCI,
-            kCIInputExtentKey: CIVector(cgRect: maskCI.extent),
-        ])?.outputImage {
-            var px: [UInt8] = [0, 0, 0, 0]
-            ciContext.render(avg, toBitmap: &px, rowBytes: 4,
-                             bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-                             format: .RGBA8, colorSpace: nil)
-            if px[0] < 12 { return image }   // 平均マスク値が低い＝人物がほぼ写っていない
+        // マスク(OneComponent8)の生バイトを直接読む。
+        // CIImage(cvPixelBuffer:) は単一チャンネルをどのチャンネルへ載せるか端末依存で曖昧で、
+        // 輝度が常に白扱いになると CIBlendWithMask が全面を前景と見なし背景が消えない。
+        // 生値からグレースケール画像を組み直せば解釈が一意になる（人物=255, 背景=0）。
+        CVPixelBufferLockBaseAddress(mask, .readOnly)
+        let mw = CVPixelBufferGetWidth(mask)
+        let mh = CVPixelBufferGetHeight(mask)
+        let mbpr = CVPixelBufferGetBytesPerRow(mask)
+        guard mw > 0, mh > 0, let mbase = CVPixelBufferGetBaseAddress(mask) else {
+            CVPixelBufferUnlockBaseAddress(mask, .readOnly)
+            return image
         }
+        let srcBytes = mbase.assumingMemoryBound(to: UInt8.self)
+        var bytes = [UInt8](repeating: 0, count: mw * mh)
+        var sum = 0
+        for y in 0..<mh {
+            let row = y * mbpr
+            for x in 0..<mw {
+                let v = srcBytes[row + x]
+                bytes[y * mw + x] = v
+                sum += Int(v)
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(mask, .readOnly)
 
-        // マスクの輝度コントラストを上げて境界を締め、背景の薄残り（甘さ）を消す。
-        // CIBlendWithMask はグレースケール（輝度）をマスクに使うので、輝度のみ操作しアルファには触らない。
-        // brightness を少し下げて人物側へ寄せ、背景を多めに削る。
-        maskCI = maskCI.applyingFilter("CIColorControls", parameters: [
-            kCIInputContrastKey: 3.0,
-            kCIInputBrightnessKey: -0.18,
-            kCIInputSaturationKey: 1.0,
+        // ほぼ空のマスク（人物未検出）なら透明化せず元画像を返す。
+        if sum / (mw * mh) < 4 { return image }
+
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let maskCG = CGImage(width: mw, height: mh, bitsPerComponent: 8, bitsPerPixel: 8,
+                                   bytesPerRow: mw, space: CGColorSpaceCreateDeviceGray(),
+                                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                                   provider: provider, decode: nil, shouldInterpolate: true,
+                                   intent: .defaultIntent)
+        else { return image }
+
+        // 境界を少し締めて背景の薄残りを消す（輝度のみ操作）。
+        var maskCI = CIImage(cgImage: maskCG).applyingFilter("CIColorControls", parameters: [
+            kCIInputContrastKey: 2.0,
         ])
 
         // マスクを元画像サイズへ合わせる。
