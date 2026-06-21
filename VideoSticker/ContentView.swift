@@ -190,10 +190,15 @@ struct ContentView: View {
                 await MainActor.run { processing = false }
                 return
             }
-            let gestures = GestureClassifier.classifyEach(frames)
+            // 動画を時間順に6等分し、撮影ガイドの順番でバケツへ割り当てる。
+            // 動き判定が弱くても（動物・物でも）必ず6バケツ＝24枠すべてを埋める。
+            let order: [Gesture] = [.bow, .wave, .ok, .fist, .palm, .nod]
+            let n = frames.count
             var byG: [Gesture: [UIImage]] = [:]
-            for (img, g) in zip(frames, gestures) {
-                if let g { byG[g, default: []].append(img) }
+            for (i, g) in order.enumerated() {
+                let lo = i * n / order.count
+                let hi = (i + 1) * n / order.count
+                byG[g] = lo < hi ? Array(frames[lo..<hi]) : [frames[min(lo, n - 1)]]
             }
 
             var newRaw: [Gesture: [UIImage]] = [:]

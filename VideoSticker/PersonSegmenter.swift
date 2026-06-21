@@ -25,6 +25,20 @@ enum PersonSegmenter {
         guard let mask = request.results?.first?.pixelBuffer else { return image }
 
         var maskCI = CIImage(cvPixelBuffer: mask)
+
+        // マスクがほぼ空（人物未検出）なら透明化せず元画像を返す。
+        // これがないと人物を拾えない動画でスタンプが真っ透明になる。
+        if let avg = CIFilter(name: "CIAreaAverage", parameters: [
+            kCIInputImageKey: maskCI,
+            kCIInputExtentKey: CIVector(cgRect: maskCI.extent),
+        ])?.outputImage {
+            var px: [UInt8] = [0, 0, 0, 0]
+            ciContext.render(avg, toBitmap: &px, rowBytes: 4,
+                             bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                             format: .RGBA8, colorSpace: nil)
+            if px[0] < 12 { return image }   // 平均マスク値が低い＝人物がほぼ写っていない
+        }
+
         // マスクを元画像サイズへ合わせる。
         let sx = ci.extent.width / maskCI.extent.width
         let sy = ci.extent.height / maskCI.extent.height

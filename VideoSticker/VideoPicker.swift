@@ -56,7 +56,8 @@ struct VideoPicker: UIViewControllerRepresentable {
         steps.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         steps.layer.cornerRadius = 12
         steps.clipsToBounds = true
-        steps.frame = CGRect(x: 16, y: screen.height * 0.055, width: screen.width - 32, height: 78)
+        // 上部中央のシステム録画タイマー（赤い数字）に被らないよう下げる。
+        steps.frame = CGRect(x: 16, y: screen.height * 0.12, width: screen.width - 32, height: 78)
         overlay.addSubview(steps)
 
         // 下部: ヒント（システムの録画ボタンの上に置く）
