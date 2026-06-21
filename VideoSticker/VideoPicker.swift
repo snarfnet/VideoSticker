@@ -18,9 +18,57 @@ struct VideoPicker: UIViewControllerRepresentable {
             p.cameraCaptureMode = .video
             p.videoMaximumDuration = 15   // 6種類の動きを1本に収めるため長めに
             p.videoQuality = .typeHigh
+            // 証明写真風の黄色いガイド枠＋ポーズの順番を重ねる
+            p.cameraOverlayView = Self.makeGuideOverlay()
         }
         p.delegate = context.coordinator
         return p
+    }
+
+    /// 撮影ガイドのオーバーレイ（黄色い枠 + ポーズ順）。タップは透過してシステムの録画ボタンを邪魔しない。
+    private static func makeGuideOverlay() -> UIView {
+        let screen = UIScreen.main.bounds
+        let overlay = UIView(frame: screen)
+        overlay.backgroundColor = .clear
+        overlay.isUserInteractionEnabled = false
+
+        // 頭〜肩を合わせる黄色いだ円ガイド（証明写真風）
+        let guideW = screen.width * 0.60
+        let guideH = guideW * 1.28
+        let guideRect = CGRect(x: (screen.width - guideW) / 2,
+                               y: screen.height * 0.20,
+                               width: guideW, height: guideH)
+        let guide = CAShapeLayer()
+        guide.path = UIBezierPath(roundedRect: guideRect, cornerRadius: guideW * 0.46).cgPath
+        guide.strokeColor = UIColor.systemYellow.cgColor
+        guide.fillColor = UIColor.clear.cgColor
+        guide.lineWidth = 3
+        guide.lineDashPattern = [10, 6]
+        overlay.layer.addSublayer(guide)
+
+        // 上部: ポーズの順番
+        let steps = UILabel()
+        steps.numberOfLines = 0
+        steps.textAlignment = .center
+        steps.text = "黄色い枠に体を合わせて、順番に動いてください\n① お辞儀 → ② 手を振る → ③ OKサイン\n→ ④ ガッツポーズ → ⑤ 手のひら → ⑥ 会釈"
+        steps.font = .systemFont(ofSize: 14, weight: .bold)
+        steps.textColor = .white
+        steps.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        steps.layer.cornerRadius = 12
+        steps.clipsToBounds = true
+        steps.frame = CGRect(x: 16, y: screen.height * 0.055, width: screen.width - 32, height: 78)
+        overlay.addSubview(steps)
+
+        // 下部: ヒント（システムの録画ボタンの上に置く）
+        let hint = UILabel()
+        hint.textAlignment = .center
+        hint.text = "各ポーズを2〜3秒キープ"
+        hint.font = .systemFont(ofSize: 13, weight: .semibold)
+        hint.textColor = .systemYellow
+        hint.frame = CGRect(x: 16, y: screen.height - 150, width: screen.width - 32, height: 24)
+        overlay.addSubview(hint)
+
+        return overlay
     }
 
     func updateUIViewController(_ vc: UIImagePickerController, context: Context) {}
