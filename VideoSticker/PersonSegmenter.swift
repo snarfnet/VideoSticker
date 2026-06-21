@@ -39,17 +39,14 @@ enum PersonSegmenter {
             if px[0] < 12 { return image }   // 平均マスク値が低い＝人物がほぼ写っていない
         }
 
-        // マスクのコントラストを立てて背景の薄残り（甘さ）を消す。
-        // 0.45〜0.75 を 0〜1 へ引き伸ばし、境界を人物側へ少し引き締める＝背景のヘイズを除去。
-        // scale = 1/(0.75-0.45) ≈ 3.333, bias = -0.45*scale = -1.5
-        let s: CGFloat = 3.333
-        maskCI = maskCI.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: s, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: s, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: s, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: s),
-            "inputBiasVector": CIVector(x: -1.5, y: -1.5, z: -1.5, w: -1.5),
-        ]).applyingFilter("CIColorClamp")
+        // マスクの輝度コントラストを上げて境界を締め、背景の薄残り（甘さ）を消す。
+        // CIBlendWithMask はグレースケール（輝度）をマスクに使うので、輝度のみ操作しアルファには触らない。
+        // brightness を少し下げて人物側へ寄せ、背景を多めに削る。
+        maskCI = maskCI.applyingFilter("CIColorControls", parameters: [
+            kCIInputContrastKey: 3.0,
+            kCIInputBrightnessKey: -0.18,
+            kCIInputSaturationKey: 1.0,
+        ])
 
         // マスクを元画像サイズへ合わせる。
         let sx = ci.extent.width / maskCI.extent.width
