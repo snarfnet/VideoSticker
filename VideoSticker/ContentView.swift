@@ -33,7 +33,6 @@ struct ContentView: View {
                 header
                 ScrollView {
                     guideCard
-                    sampleButton
                     bgPicker
                     LazyVGrid(columns: cols, spacing: 10) {
                         ForEach(store.slots) { slot in
@@ -47,6 +46,17 @@ struct ContentView: View {
             }
 
             VStack { Spacer(); bottomBar }
+
+            // 左上に控えめなサンプルボタン。
+            VStack {
+                HStack {
+                    sampleButton
+                    Spacer()
+                }
+                Spacer()
+            }
+            .padding(.leading, 12)
+            .padding(.top, 6)
         }
         .sheet(isPresented: $showCamera) {
             VideoPicker(source: .camera) { url in processAll(url) }
@@ -102,21 +112,16 @@ struct ContentView: View {
 
     private var sampleButton: some View {
         Button { runSample() } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                Text("サンプル動画で試す")
+            HStack(spacing: 4) {
+                Image(systemName: "play.circle")
+                Text("サンプル")
             }
-            .font(.system(size: 14, weight: .heavy, design: .rounded))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(LinearGradient(colors: [Color(red: 0.55, green: 0.4, blue: 0.95),
-                                                Color(red: 0.4, green: 0.3, blue: 0.85)],
-                                       startPoint: .top, endPoint: .bottom))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.white.opacity(0.7)))
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
     }
 
     private func runSample() {
