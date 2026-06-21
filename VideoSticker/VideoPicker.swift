@@ -46,28 +46,19 @@ struct VideoPicker: UIViewControllerRepresentable {
         guide.lineDashPattern = [10, 6]
         overlay.layer.addSublayer(guide)
 
-        // 上部: ポーズの順番
+        // ポーズの順番＋ヒント。上部はシステムの録画タイマー（赤い数字）専用に空け、
+        // ガイド説明はすべて画面下部（録画ボタンの上）にまとめる。
         let steps = UILabel()
         steps.numberOfLines = 0
         steps.textAlignment = .center
-        steps.text = "黄色い枠に体を合わせて、順番に動いてください\n① お辞儀 → ② 手を振る → ③ OKサイン\n→ ④ ガッツポーズ → ⑤ 手のひら → ⑥ 会釈"
+        steps.text = "黄色い枠に体を合わせて、順番に動いてください\n① お辞儀 → ② 手を振る → ③ OKサイン\n→ ④ ガッツポーズ → ⑤ 手のひら → ⑥ 会釈\n各ポーズを2〜3秒キープ"
         steps.font = .systemFont(ofSize: 14, weight: .bold)
         steps.textColor = .white
         steps.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         steps.layer.cornerRadius = 12
         steps.clipsToBounds = true
-        // 上部中央のシステム録画タイマー（赤い数字）に被らないよう下げる。
-        steps.frame = CGRect(x: 16, y: screen.height * 0.12, width: screen.width - 32, height: 78)
+        steps.frame = CGRect(x: 16, y: screen.height - 270, width: screen.width - 32, height: 100)
         overlay.addSubview(steps)
-
-        // 下部: ヒント（システムの録画ボタンの上に置く）
-        let hint = UILabel()
-        hint.textAlignment = .center
-        hint.text = "各ポーズを2〜3秒キープ"
-        hint.font = .systemFont(ofSize: 13, weight: .semibold)
-        hint.textColor = .systemYellow
-        hint.frame = CGRect(x: 16, y: screen.height - 150, width: screen.width - 32, height: 24)
-        overlay.addSubview(hint)
 
         return overlay
     }
